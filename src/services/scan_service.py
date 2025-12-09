@@ -95,6 +95,11 @@ class ScanService:
                     'sound': error_sound
                 }
 
+            # Get sub job type name if sub_job_id exists
+            sub_job_type_name = None
+            if sub_job_id:
+                sub_job_type_name = self.get_sub_job_type_name(sub_job_id)
+
             # Auto-append note_fill from notification to notes if exists
             final_notes = notes or ''
             if notification and notification.get('note_fill'):
@@ -108,7 +113,7 @@ class ScanService:
                         final_notes = note_fill
 
             # Save scan record
-            save_result = self.save_scan_record(barcode, job_id, sub_job_id, job_type_name, final_notes, user_id)
+            save_result = self.save_scan_record(barcode, job_id, sub_job_id, job_type_name, sub_job_type_name, final_notes, user_id)
 
             # Add success sound if save was successful
             if save_result.get('success'):
@@ -197,25 +202,26 @@ class ScanService:
         except Exception as e:
             return {'success': False, 'message': f'เกิดข้อผิดพลาดในการตรวจสอบการสแกนซ้ำ: {str(e)}'}
     
-    def save_scan_record(self, barcode: str, job_id: int, sub_job_id: Optional[int], 
-                        job_type_name: str, notes: str = None, user_id: str = None) -> Dict[str, Any]:
+    def save_scan_record(self, barcode: str, job_id: int, sub_job_id: Optional[int],
+                        job_type_name: str, sub_job_type_name: Optional[str] = None,
+                        notes: str = None, user_id: str = None) -> Dict[str, Any]:
         """บันทึกข้อมูลการสแกน"""
         try:
             # Get current user if not provided
             if not user_id:
                 user_id = self.db.current_user or 'system'
-            
+
             # Clean notes
             clean_notes = notes.strip() if notes else None
-            
+
             # Insert record
             query = """
-                INSERT INTO scan_logs (barcode, scan_date, job_type, user_id, job_id, sub_job_id, notes)
-                VALUES (?, GETDATE(), ?, ?, ?, ?, ?)
+                INSERT INTO scan_logs (barcode, scan_date, job_type, sub_job_type, user_id, job_id, sub_job_id, notes)
+                VALUES (?, GETDATE(), ?, ?, ?, ?, ?, ?)
             """
-            
+
             rows_affected = self.db.execute_non_query(query, (
-                barcode, job_type_name, user_id, job_id, sub_job_id, clean_notes
+                barcode, job_type_name, sub_job_type_name, user_id, job_id, sub_job_id, clean_notes
             ))
             
             if rows_affected > 0:
@@ -240,16 +246,31 @@ class ScanService:
         try:
             query = "SELECT job_name FROM job_types WHERE id = ?"
             results = self.db.execute_query(query, (job_id,))
-            
+
             if results:
                 return results[0]['job_name']
-            
+
             return None
-            
+
         except Exception as e:
             print(f"Error getting job type name: {str(e)}")
             return None
-    
+
+    def get_sub_job_type_name(self, sub_job_id: int) -> Optional[str]:
+        """ดึงชื่อประเภทงานย่อยจาก ID"""
+        try:
+            query = "SELECT sub_job_name FROM sub_job_types WHERE id = ?"
+            results = self.db.execute_query(query, (sub_job_id,))
+
+            if results:
+                return results[0]['sub_job_name']
+
+            return None
+
+        except Exception as e:
+            print(f"Error getting sub job type name: {str(e)}")
+            return None
+
     def get_scan_history(self, limit: int = 50, date_filter: str = None, 
                         job_id: int = None, sub_job_id: int = None, 
                         barcode_filter: str = None, notes_filter: str = None,
@@ -437,10 +458,16 @@ class ScanService:
                     update_fields.append("job_type = ?")
                     update_fields.append("job_id = ?")
                     params.extend([job_name, job_id])
-            
+
             if sub_job_id is not None:
+                # Get sub job type name
+                sub_job_name = None
+                if sub_job_id:
+                    sub_job_name = self.get_sub_job_type_name(sub_job_id)
+
+                update_fields.append("sub_job_type = ?")
                 update_fields.append("sub_job_id = ?")
-                params.append(sub_job_id)
+                params.extend([sub_job_name, sub_job_id])
             
             if notes is not None:
                 clean_notes = notes.strip() if notes else None

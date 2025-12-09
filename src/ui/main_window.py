@@ -3390,17 +3390,23 @@ ID_ประเภทงานย่อย: 10
                     # Get job name for job_type field (for compatibility)
                     job_name_result = self.db.execute_query("SELECT job_name FROM job_types WHERE id = ?", (main_job_id,))
                     main_job_name = job_name_result[0]['job_name'] if job_name_result else f"ID_{main_job_id}"
-                    
+
+                    # Get sub job name for sub_job_type field
+                    sub_job_name = None
+                    if sub_job_id:
+                        sub_job_name_result = self.db.execute_query("SELECT sub_job_name FROM sub_job_types WHERE id = ?", (sub_job_id,))
+                        sub_job_name = sub_job_name_result[0]['sub_job_name'] if sub_job_name_result else None
+
                     # Prepare notes with "import" prefix
                     if notes:
                         formatted_notes = f"import {notes}"
                     else:
                         formatted_notes = "import"
-                    
+
                     # Insert into database
                     self.db.execute_non_query(
-                        "INSERT INTO scan_logs (barcode, scan_date, job_type, user_id, job_id, sub_job_id, notes) VALUES (?, GETDATE(), ?, ?, ?, ?, ?)",
-                        (barcode, main_job_name, self.db.current_user, main_job_id, sub_job_id, formatted_notes)
+                        "INSERT INTO scan_logs (barcode, scan_date, job_type, sub_job_type, user_id, job_id, sub_job_id, notes) VALUES (?, GETDATE(), ?, ?, ?, ?, ?, ?)",
+                        (barcode, main_job_name, sub_job_name, self.db.current_user, main_job_id, sub_job_id, formatted_notes)
                     )
                     
                     success_count += 1

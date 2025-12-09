@@ -231,20 +231,21 @@ class ImportTab:
                         sub_result = self.db_manager.execute_query(query, (sub_job_type, job_type_id))
                         if sub_result:
                             sub_job_type_id = sub_result[0]['id']
-                    
+
                     # Prepare notes with "import" prefix
                     if notes:
                         formatted_notes = f"import {notes}"
                     else:
                         formatted_notes = "import"
-                    
-                    # บันทึกข้อมูล
+
+                    # บันทึกข้อมูล (รวม job_type และ sub_job_type fields)
                     query = """
-                        INSERT INTO scan_logs (barcode, job_id, sub_job_id, scan_date, user_id, notes)
-                        VALUES (?, ?, ?, GETDATE(), ?, ?)
+                        INSERT INTO scan_logs (barcode, job_id, sub_job_id, scan_date, job_type, sub_job_type, user_id, notes)
+                        VALUES (?, ?, ?, GETDATE(), ?, ?, ?, ?)
                     """
                     self.db_manager.execute_non_query(query, (
-                        barcode, job_type_id, sub_job_type_id, self.db_manager.current_user, formatted_notes
+                        barcode, job_type_id, sub_job_type_id, job_type, sub_job_type if sub_job_type else None,
+                        self.db_manager.current_user, formatted_notes
                     ))
                     
                     success_count += 1

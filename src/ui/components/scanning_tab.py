@@ -182,15 +182,16 @@ class ScanningTab:
                 sub_result = self.db_manager.execute_query(query, (sub_job_type, job_type_id))
                 if sub_result:
                     sub_job_type_id = sub_result[0]['id']
-            
-            # บันทึกการสแกน
+
+            # บันทึกการสแกน (รวม job_type และ sub_job_type fields)
             query = """
-                INSERT INTO scan_logs (barcode, job_id, sub_job_id, scan_date, user_id, notes)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO scan_logs (barcode, job_id, sub_job_id, scan_date, job_type, sub_job_type, user_id, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """
             scan_date = datetime.now()
             self.db_manager.execute_non_query(query, (
-                barcode, job_type_id, sub_job_type_id, scan_date, self.db_manager.current_user, ''
+                barcode, job_type_id, sub_job_type_id, scan_date, job_type, sub_job_type if sub_job_type else None,
+                self.db_manager.current_user, ''
             ))
             
             # แสดงข้อความสำเร็จ

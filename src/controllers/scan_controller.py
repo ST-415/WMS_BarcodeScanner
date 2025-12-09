@@ -363,15 +363,16 @@ class ScanController:
     def _save_scan_record(self, barcode: str, job_id: int, sub_job_id: Optional[int]):
         """บันทึกข้อมูลการสแกน"""
         job_type_name = self.current_job_type.get()
+        sub_job_type_name = self.current_sub_job_type.get() if sub_job_id else None
         notes = self.notes_var.get().strip()
-        
+
         query = """
-            INSERT INTO scan_logs (barcode, scan_date, job_type, user_id, job_id, sub_job_id, notes)
-            VALUES (?, GETDATE(), ?, ?, ?, ?, ?)
+            INSERT INTO scan_logs (barcode, scan_date, job_type, sub_job_type, user_id, job_id, sub_job_id, notes)
+            VALUES (?, GETDATE(), ?, ?, ?, ?, ?, ?)
         """
-        
+
         self.db.execute_non_query(query, (
-            barcode, job_type_name, self.db.current_user, 
+            barcode, job_type_name, sub_job_type_name, self.db.current_user,
             job_id, sub_job_id, notes if notes else None
         ))
     
