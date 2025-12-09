@@ -79,13 +79,14 @@ def ensure_tables_exist(db_manager=None):
                     barcode VARCHAR(100) NOT NULL,
                     scan_date DATETIME NOT NULL DEFAULT GETDATE(),
                     job_type VARCHAR(100) NOT NULL,
+                    sub_job_type NVARCHAR(255) NULL,
                     user_id VARCHAR(50) NOT NULL,
                     job_id INT NULL,
                     sub_job_id INT NULL,
                     notes NVARCHAR(1000) NULL,
-                    CONSTRAINT FK_scan_logs_job_id 
+                    CONSTRAINT FK_scan_logs_job_id
                         FOREIGN KEY (job_id) REFERENCES job_types(id),
-                    CONSTRAINT FK_scan_logs_sub_job 
+                    CONSTRAINT FK_scan_logs_sub_job
                         FOREIGN KEY (sub_job_id) REFERENCES sub_job_types(id)
                 )
                 """
@@ -97,6 +98,7 @@ def ensure_tables_exist(db_manager=None):
                     "CREATE INDEX IX_scan_logs_barcode ON scan_logs (barcode)",
                     "CREATE INDEX IX_scan_logs_scan_date ON scan_logs (scan_date)",
                     "CREATE INDEX IX_scan_logs_job_type ON scan_logs (job_type)",
+                    "CREATE INDEX IX_scan_logs_sub_job_type ON scan_logs (sub_job_type)",
                     "CREATE INDEX IX_scan_logs_user_id ON scan_logs (user_id)",
                     "CREATE INDEX IX_scan_logs_job_id ON scan_logs (job_id)",
                     "CREATE INDEX IX_scan_logs_sub_job_id ON scan_logs(sub_job_id)"
