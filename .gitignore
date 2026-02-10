@@ -141,6 +141,7 @@ config/sql_config.json
 *.log
 temp/
 tmp/
+temp_exports/
 
 wms_user_setup.sql
 wms_scanner_qr.png

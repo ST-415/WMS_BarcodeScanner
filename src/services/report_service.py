@@ -17,102 +17,99 @@ class ReportService:
     def __init__(self, context: str = "Service: ReportService"):
         self.db = DatabaseManager.get_instance(None, context)
     
-    def generate_report(self, report_date: str, job_id: int, sub_job_id: Optional[int] = None,
-                       note_filter: str = None) -> Dict[str, Any]:
+    def generate_report(self, report_date: Optional[str] = None, job_id: Optional[int] = None, sub_job_id: Optional[int] = None,
+                       note_filter: str = None, barcode_filter: str = None) -> Dict[str, Any]:
         """สร้างรายงาน"""
         try:
-            # Validate inputs
-            if not report_date:
-                return {'success': False, 'message': 'กรุณาระบุวันที่'}
-            
-            if not job_id:
-                return {'success': False, 'message': 'กรุณาเลือกงานหลัก'}
-            
-            # Get job type info
-            job_info = self.get_job_info(job_id)
-            if not job_info:
-                return {'success': False, 'message': 'ไม่พบข้อมูลงานหลัก'}
-            
+
+            # Get job type info (optional now)
+            job_info = None
+            if job_id:
+                job_info = self.get_job_info(job_id)
+                if not job_info:
+                    return {'success': False, 'message': 'ไม่พบข้อมูลงานหลัก'}
+
             sub_job_info = None
             if sub_job_id:
                 sub_job_info = self.get_sub_job_info(sub_job_id)
                 if not sub_job_info:
                     return {'success': False, 'message': 'ไม่พบข้อมูลงานรอง'}
-            
+
             # Build and execute query
-            report_data = self.execute_report_query(report_date, job_id, sub_job_id, note_filter)
-            
+            report_data = self.execute_report_query(report_date, job_id, sub_job_id, note_filter, barcode_filter)
+
             # Create summary
             summary = {
-                'report_date': report_date,
-                'job_type_name': job_info['job_name'],
+                'report_date': report_date if report_date else 'ทุกวัน',
+                'job_type_name': job_info['job_name'] if job_info else 'ทั้งหมด',
                 'sub_job_type_name': sub_job_info['sub_job_name'] if sub_job_info else 'ทั้งหมด',
+                'barcode_filter': barcode_filter.strip() if barcode_filter and barcode_filter.strip() else None,
                 'note_filter': note_filter.strip() if note_filter and note_filter.strip() else None,
                 'total_count': len(report_data),
                 'generated_at': datetime.now().isoformat()
             }
-            
+
             return {
                 'success': True,
                 'summary': summary,
                 'data': report_data
             }
-            
+
         except Exception as e:
             return {
                 'success': False,
                 'message': f'เกิดข้อผิดพลาดในการสร้างรายงาน: {str(e)}'
             }
     
-    def execute_report_query(self, report_date: str, job_id: int, 
-                           sub_job_id: Optional[int] = None, note_filter: str = None) -> List[Dict[str, Any]]:
+    def execute_report_query(self, report_date: Optional[str] = None, job_id: Optional[int] = None,
+                           sub_job_id: Optional[int] = None, note_filter: str = None,
+                           barcode_filter: str = None) -> List[Dict[str, Any]]:
         """ดำเนินการ query สำหรับรายงาน"""
         try:
+            query = """
+                SELECT
+                    sl.barcode,
+                    sl.scan_date,
+                    sl.notes,
+                    sl.user_id,
+                    ISNULL(jt.job_name, 'ไม่มี') as job_type_name,
+                    ISNULL(sjt.sub_job_name, 'ไม่มี') as sub_job_type_name
+                FROM scan_logs sl
+                LEFT JOIN job_types jt ON sl.job_id = jt.id
+                LEFT JOIN sub_job_types sjt ON sl.sub_job_id = sjt.id
+                WHERE 1=1
+            """
+            params = []
+
+            # Add date filter (optional)
+            if report_date:
+                query += " AND CAST(sl.scan_date AS DATE) = ?"
+                params.append(report_date)
+
+            # Add job type filter (optional)
+            if job_id:
+                query += " AND sl.job_id = ?"
+                params.append(job_id)
+
+            # Add sub job type filter
             if sub_job_id:
-                # Specific job type and sub job type
-                query = """
-                    SELECT 
-                        sl.barcode,
-                        sl.scan_date,
-                        sl.notes,
-                        sl.user_id,
-                        jt.job_name as job_type_name,
-                        sjt.sub_job_name as sub_job_type_name
-                    FROM scan_logs sl
-                    LEFT JOIN job_types jt ON sl.job_id = jt.id
-                    LEFT JOIN sub_job_types sjt ON sl.sub_job_id = sjt.id
-                    WHERE sl.job_id = ? 
-                    AND sl.sub_job_id = ?
-                    AND CAST(sl.scan_date AS DATE) = ?
-                """
-                params = [job_id, sub_job_id, report_date]
-            else:
-                # Specific job type, all sub job types
-                query = """
-                    SELECT 
-                        sl.barcode,
-                        sl.scan_date,
-                        sl.notes,
-                        sl.user_id,
-                        jt.job_name as job_type_name,
-                        ISNULL(sjt.sub_job_name, 'ไม่มี') as sub_job_type_name
-                    FROM scan_logs sl
-                    LEFT JOIN job_types jt ON sl.job_id = jt.id
-                    LEFT JOIN sub_job_types sjt ON sl.sub_job_id = sjt.id
-                    WHERE sl.job_id = ? 
-                    AND CAST(sl.scan_date AS DATE) = ?
-                """
-                params = [job_id, report_date]
-            
+                query += " AND sl.sub_job_id = ?"
+                params.append(sub_job_id)
+
+            # Add barcode filter
+            if barcode_filter and barcode_filter.strip():
+                query += " AND sl.barcode LIKE ?"
+                params.append(f"%{barcode_filter.strip()}%")
+
             # Add note filter
             if note_filter and note_filter.strip():
                 query += " AND sl.notes LIKE ?"
                 params.append(f"%{note_filter.strip()}%")
-            
+
             query += " ORDER BY sl.scan_date DESC"
-            
+
             results = self.db.execute_query(query, tuple(params))
-            
+
             # Convert to list of dictionaries
             report_data = []
             for row in results:
@@ -124,9 +121,9 @@ class ReportService:
                     'job_type_name': row['job_type_name'],
                     'sub_job_type_name': row['sub_job_type_name']
                 })
-            
+
             return report_data
-            
+
         except Exception as e:
             print(f"Error executing report query: {str(e)}")
             return []

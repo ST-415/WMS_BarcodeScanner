@@ -968,13 +968,27 @@
                     <div style="margin-bottom: 20px;"></div>
 
                     <label for="reportDate">เลือกวันที่:</label>
-                    <input type="date" id="reportDate" required>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <input type="date" id="reportDate" disabled>
+                        <label style="display: flex; align-items: center; gap: 5px; margin: 0; font-weight: normal; white-space: nowrap;">
+                            <input type="checkbox" id="reportAllDates" checked onchange="toggleReportDateFilter()">
+                            ทุกวัน
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="reportBarcodeFilter">ค้นหาบาร์โค้ด:</label>
+                    <input type="text" id="reportBarcodeFilter" placeholder="พิมพ์บาร์โค้ดที่ต้องการค้นหา (ไม่บังคับ)">
+                    <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
+                        ระบบจะค้นหาบาร์โค้ดที่มีข้อความนี้อยู่ในส่วนใดส่วนหนึ่ง
+                    </small>
                 </div>
 
                 <div class="form-group">
                     <label for="reportJobType">เลือกงานหลัก:</label>
                     <select id="reportJobType" onchange="loadReportSubJobTypes()">
-                        <option value="">เลือกงานหลัก</option>
+                        <option value="">ทั้งหมด</option>
                     </select>
                 </div>
 
@@ -989,11 +1003,14 @@
                     <label for="reportNoteFilter">กรองหมายเหตุ:</label>
                     <input type="text" id="reportNoteFilter" placeholder="พิมพ์หมายเหตุที่ต้องการค้นหา (ไม่บังคับ)">
                     <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
-                        💡 ระบบจะค้นหาหมายเหตุที่มีข้อความนี้อยู่ในส่วนใดส่วนหนึ่ง
+                        ระบบจะค้นหาหมายเหตุที่มีข้อความนี้อยู่ในส่วนใดส่วนหนึ่ง
                     </small>
                 </div>
 
-                <button class="btn btn-primary" onclick="generateReport()">📊 ดูรายงาน</button>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-primary" onclick="generateReport()">📊 ดูรายงาน</button>
+                    <button class="btn btn-primary" id="exportReportBtn" onclick="exportReportExcel()" style="background-color: #28a745; display: none;">📤 ส่งออก Excel ทั้งหมด</button>
+                </div>
 
                 <div id="reportStatus"></div>
 
@@ -1014,10 +1031,14 @@
 
     <script>
         let isConnected = true;
-        
+
         // Global cache for job types and sub job types
         let jobTypesCache = [];
         let subJobTypesCache = {};
+
+        // Store last report data for export
+        let lastReportData = null;
+        let lastReportSummary = null;
         
         // Audio management system
         let audioManager = {
@@ -1190,8 +1211,8 @@
             const jobTypeSelect = document.getElementById(selectId);
             if (!jobTypeSelect) return;
             
-            jobTypeSelect.innerHTML = selectId === 'reportJobType' ? 
-                '<option value="">เลือกงานหลัก</option>' : 
+            jobTypeSelect.innerHTML = selectId === 'reportJobType' ?
+                '<option value="">ทั้งหมด</option>' :
                 '<option value="">เลือก Job Type</option>';
             
             jobTypes.forEach(jobType => {
@@ -2046,31 +2067,86 @@
             }
         }
 
-        // Generate report
-        async function generateReport() {
-            const reportDate = document.getElementById('reportDate').value;
-            const jobTypeId = document.getElementById('reportJobType').value;
-            const subJobTypeId = document.getElementById('reportSubJobType').value;
-            const noteFilter = document.getElementById('reportNoteFilter').value.trim();
+        // Toggle date filter
+        function toggleReportDateFilter() {
+            const allDatesChecked = document.getElementById('reportAllDates').checked;
+            const dateInput = document.getElementById('reportDate');
+            dateInput.disabled = allDatesChecked;
+            if (allDatesChecked) {
+                dateInput.value = '';
+            }
+        }
 
-            if (!reportDate) {
-                showStatus('reportStatus', 'กรุณาเลือกวันที่', 'error');
+        // Export report to Excel
+        async function exportReportExcel() {
+            if (!lastReportData || lastReportData.length === 0) {
+                showStatus('reportStatus', 'ไม่มีข้อมูลสำหรับส่งออก', 'error');
                 return;
             }
 
-            if (!jobTypeId) {
-                showStatus('reportStatus', 'กรุณาเลือกงานหลัก', 'error');
+            showStatus('reportStatus', 'กำลังส่งออก Excel...', 'info');
+
+            try {
+                const result = await fetchWithRateLimit('/api/report/export', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        report_data: lastReportData,
+                        summary: lastReportSummary
+                    })
+                });
+
+                if (result.isRateLimit) {
+                    handleRateLimitError(result.data, 'reportStatus');
+                    return;
+                }
+
+                const { data } = result;
+
+                if (data.success && data.download_url) {
+                    showStatus('reportStatus', `ส่งออกสำเร็จ (${lastReportData.length} รายการ)`, 'success');
+                    // Trigger download
+                    const link = document.createElement('a');
+                    link.href = data.download_url;
+                    link.download = '';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                } else {
+                    showStatus('reportStatus', data.message || 'เกิดข้อผิดพลาดในการส่งออก', 'error');
+                }
+            } catch (error) {
+                showStatus('reportStatus', 'เกิดข้อผิดพลาดในการส่งออก', 'error');
+            }
+        }
+
+        // Generate report
+        async function generateReport() {
+            const allDatesChecked = document.getElementById('reportAllDates').checked;
+            const reportDate = allDatesChecked ? null : document.getElementById('reportDate').value;
+            const jobTypeId = document.getElementById('reportJobType').value;
+            const subJobTypeId = document.getElementById('reportSubJobType').value;
+            const noteFilter = document.getElementById('reportNoteFilter').value.trim();
+            const barcodeFilter = document.getElementById('reportBarcodeFilter').value.trim();
+
+            if (!allDatesChecked && !reportDate) {
+                showStatus('reportStatus', 'กรุณาเลือกวันที่ หรือเลือก "ทุกวัน"', 'error');
                 return;
             }
 
             showStatus('reportStatus', 'กำลังโหลดรายงาน...', 'info');
 
             try {
-                const requestBody = { 
+                const requestBody = {
                     report_date: reportDate,
-                    job_type_id: jobTypeId, 
+                    job_type_id: jobTypeId || null,
                     sub_job_type_id: subJobTypeId || null
                 };
+
+                // เพิ่มฟิลเตอร์บาร์โค้ดถ้ามีการกรอก
+                if (barcodeFilter) {
+                    requestBody.barcode_filter = barcodeFilter;
+                }
 
                 // เพิ่มฟิลเตอร์หมายเหตุถ้ามีการกรอก
                 if (noteFilter) {
@@ -2093,6 +2169,13 @@
                 const { data } = result;
 
                 if (data.success) {
+                    // Store full data for export
+                    lastReportData = data.data;
+                    lastReportSummary = data.summary;
+
+                    // Show export button
+                    document.getElementById('exportReportBtn').style.display = 'inline-block';
+
                     showStatus('reportStatus', 'โหลดรายงานสำเร็จ', 'success');
                     displayReport(data.summary, data.data);
                 } else {
@@ -2109,6 +2192,16 @@
             const summaryContent = document.getElementById('summaryContent');
             const generatedAt = new Date(summary.generated_at).toLocaleString('th-TH');
             
+            let barcodeFilterHtml = '';
+            if (summary.barcode_filter) {
+                barcodeFilterHtml = `
+                    <div class="summary-item">
+                        <span class="summary-label">ค้นหาบาร์โค้ด:</span>
+                        <span class="summary-value">"${summary.barcode_filter}"</span>
+                    </div>
+                `;
+            }
+
             let noteFilterHtml = '';
             if (summary.note_filter) {
                 noteFilterHtml = `
@@ -2128,10 +2221,11 @@
                     <span class="summary-label">งานรอง:</span>
                     <span class="summary-value">${summary.sub_job_type_name}</span>
                 </div>
+                ${barcodeFilterHtml}
                 ${noteFilterHtml}
                 <div class="summary-item">
                     <span class="summary-label">วันที่:</span>
-                    <span class="summary-value">${new Date(summary.report_date).toLocaleDateString('th-TH')}</span>
+                    <span class="summary-value">${summary.report_date === 'ทุกวัน' ? 'ทุกวัน' : new Date(summary.report_date).toLocaleDateString('th-TH')}</span>
                 </div>
                 <div class="summary-item">
                     <span class="summary-label">วันที่เวลาที่สรุปยอด:</span>
@@ -2149,7 +2243,7 @@
             const detailsContent = document.getElementById('detailsContent');
             
             if (reportData.length === 0) {
-                detailsContent.innerHTML = '<div class="no-data">ไม่มีข้อมูลการสแกนในวันที่เลือก</div>';
+                detailsContent.innerHTML = '<div class="no-data">ไม่พบข้อมูลตามเงื่อนไขที่เลือก</div>';
             } else {
                 let detailsHtml = '';
                 
@@ -2160,7 +2254,7 @@
                 // เพิ่มข้อความแจ้งเตือนหากมีข้อมูลเกิน 100 รายการ
                 if (reportData.length > 100) {
                     detailsHtml += `<div style="text-align:center; padding:15px; background:#fff3cd; color:#856404; border-radius:5px; margin:10px 0; border-left:4px solid #ffc107;">
-                        📊 แสดงเฉพาะ 100 รายการล่าสุด (จากทั้งหมด ${reportData.length} รายการ)
+                        แสดงเฉพาะ 100 รายการล่าสุด (จากทั้งหมด ${reportData.length} รายการ) — กด "ส่งออก Excel" เพื่อดาวน์โหลดข้อมูลทั้งหมด
                     </div>`;
                 }
                 
